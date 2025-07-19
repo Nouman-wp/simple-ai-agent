@@ -1,17 +1,53 @@
-import openai
+from dotenv import load_dotenv
+from pydantic import BaseModel
+from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import PydanticOutputParser
+from langchain.agents import create_tool_calling_agent, AgentExecutor
+from tools import search_tool, wiki_tool, save_tool
 
-openai.api_key = "********"
+load_dotenv()
 
-def ask_agent(question):
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "user", "content": question}]
-    )
-    return response['choices'][0]['message']['content']
+class ResearchResponse(BaseModel):
+    topic: str
+    summary: str
+    sources: list[str]
+    tools_used: list[str]
+    
 
-while True:
-    user_input = input("You: ")
-    if user_input.lower() in ["exit", "quit"]:
-        break
-    reply = ask_agent(user_input)
-    print("Agent:", reply)
+llm = ChatAnthropic(model="claude-3-5-sonnet-20241022")
+parser = PydanticOutputParser(pydantic_object=ResearchResponse)
+
+prompt = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """
+            You are a research assistant that will help generate a research paper.
+            Answer the user query and use neccessary tools. 
+            Wrap the output in this format and provide no other text\n{format_instructions}
+            """,
+        ),
+        ("placeholder", "{chat_history}"),
+        ("human", "{query}"),
+        ("placeholder", "{agent_scratchpad}"),
+    ]
+).partial(format_instructions=parser.get_format_instructions())
+
+tools = [search_tool, wiki_tool, save_tool]
+agent = create_tool_calling_agent(
+    llm=llm,
+    prompt=prompt,
+    tools=tools
+)
+
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+query = input("What can i help you research? ")
+raw_response = agent_executor.invoke({"query": query})
+
+try:
+    structured_response = parser.parse(raw_response.get("output")[0]["text"])
+    print(structured_response)
+except Exception as e:
+    print("Error parsing response", e, "Raw Response - ", raw_response)
