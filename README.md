@@ -32,7 +32,7 @@ A smart research assistant powered by **LangChain**, **Anthropic Claude 3.5**, a
 
 ---
 
-## 🚀 Getting Started
+## To Get Started
 
 ### 1. Clone the Repository
 
